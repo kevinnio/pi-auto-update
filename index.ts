@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { spawn } from "node:child_process";
-import { readFile, writeFile, appendFile } from "node:fs/promises";
+import { readFile, writeFile, appendFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -44,6 +44,8 @@ async function setEnabled(enabled: boolean): Promise<void> {
 	const settings = JSON.parse(raw) as Record<string, unknown>;
 	if (enabled) delete settings.autoUpdateEnabled;
 	else settings.autoUpdateEnabled = false;
+	// settings.json is round-tripped as JSON, so comments in it would be lost;
+	// pi settings are plain JSON today. Switch to a keyed patch if that changes
 	await writeFile(SETTINGS_FILE, JSON.stringify(settings, null, 2) + "\n", "utf8");
 }
 
@@ -56,17 +58,42 @@ function intervalMs(): number {
 	return (hours > 0 ? hours : DEFAULT_INTERVAL_HOURS) * 3_600_000;
 }
 
-function isUpToDate(output: string): boolean {
-	// pi update prints these when it had nothing to do
-	return /already up[- ]to[- ]date|no updates|up to date/i.test(output) && !/changed \d+ packages?|Updated packages/i.test(output);
+export function isUpToDate(output: string): boolean {
+	const out = output.toLowerCase();
+	// pi prints these when it updated something
+	if (out.includes("updated packages") || /changed \d+ package/.test(out)) return false;
+	// nothing to do
+	return out.includes("up to date") || out.includes("up-to-date") || out.includes("no updates");
+}
+
+// append with a size cap so months of daily runs can't grow the log unbounded
+async function appendLog(text: string): Promise<void> {
+	try {
+		const st = await stat(LOG_FILE).catch(() => null);
+		if (st && st.size > 1_000_000) {
+			const tail = await readFile(LOG_FILE, "utf8");
+			await writeFile(LOG_FILE, tail.slice(-256_000), "utf8");
+		}
+	} catch {
+		// log rotation is best-effort; a failed rotation must never fail the update
+	}
+	await appendFile(LOG_FILE, text, "utf8").catch(() => {});
 }
 
 async function runUpdate(): Promise<{ ok: boolean; changed: boolean; tail: string }> {
-	await appendFile(LOG_FILE, `\n===== ${new Date().toISOString()} pi update --all =====\n`, "utf8");
+	await appendLog(`\n===== ${new Date().toISOString()} pi update --all =====\n`);
 	const output = await new Promise<string>((resolve) => {
 		let out = "";
 		const child = spawn("pi", ["update", "--all"], { shell: true, windowsHide: true });
-		const timer = setTimeout(() => child.kill(), UPDATE_TIMEOUT_MS);
+		// kill the whole tree on timeout: shell:true means child.kill() only kills
+		// the shell and leaves npm running. That matters when pi runs for weeks.
+		const timer = setTimeout(() => {
+			if (process.platform === "win32") {
+				spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true });
+			} else {
+				child.kill("SIGTERM");
+			}
+		}, UPDATE_TIMEOUT_MS);
 		child.stdout.on("data", (d: Buffer) => (out += d));
 		child.stderr.on("data", (d: Buffer) => (out += d));
 		child.on("error", (err) => {
@@ -80,7 +107,7 @@ async function runUpdate(): Promise<{ ok: boolean; changed: boolean; tail: strin
 			resolve(out);
 		});
 	});
-	await appendFile(LOG_FILE, output, "utf8");
+	await appendLog(output);
 	const lines = output.split("\n").map((l) => l.trim()).filter(Boolean);
 	return {
 		ok: /exit code: 0/.test(output),
@@ -111,7 +138,7 @@ async function maybeUpdate(force: boolean, ctx: ExtensionContext): Promise<void>
 		if (!result.ok) {
 			ctx.ui.notify(`pi auto-update FAILED: ${result.tail} (log: ${LOG_FILE})`, "warning");
 		} else if (result.changed) {
-			ctx.ui.notify(`pi auto-update: updated pi/packages — restart pi to apply (${result.tail})`, "info");
+			ctx.ui.notify(`pi auto-update: updated pi/packages, restart pi to apply (${result.tail})`, "info");
 		}
 		// up to date: stay quiet, like claude code
 	} finally {
@@ -120,16 +147,16 @@ async function maybeUpdate(force: boolean, ctx: ExtensionContext): Promise<void>
 	}
 }
 
-// # ponytail: JSON round-trip drops comments in settings.json; pi settings are
-// plain JSON today — if that changes, switch to a keyed patch instead.
-
 export default function (pi: ExtensionAPI) {
 	let started = false; // once per process; /new, /resume, /reload re-fire session_start
 
 	pi.on("session_start", async (_event, ctx) => {
 		if (started) return;
 		started = true;
-		void maybeUpdate(false, ctx); // fire-and-forget, never blocks startup
+		void maybeUpdate(false, ctx).catch((err: unknown) => {
+			// fire-and-forget: a failed check must never take the session down
+			void appendLog(`auto-update crashed: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}\n`);
+		});
 	});
 
 	pi.registerCommand("update", {
@@ -142,7 +169,7 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 			if (!(await isEnabled())) {
-				ctx.ui.notify("pi auto-update is disabled — run /update on to enable", "warning");
+				ctx.ui.notify("pi auto-update is disabled. Run /update on to enable.", "warning");
 				return;
 			}
 			ctx.ui.notify("pi auto-update: running pi update --all...", "info");

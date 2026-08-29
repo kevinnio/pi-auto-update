@@ -1,28 +1,25 @@
 # pi-auto-update
 
-Pi extension that auto-updates pi and its packages (extensions), Claude Code style.
+Pi extension that auto-updates pi and its packages in the background, Claude Code style. On session start it checks a cooldown file and, when due, runs `pi update --all` out of sight (pi itself plus all packages). Quiet when already up to date; notifies only when something changed ("restart pi to apply") or the update failed.
 
-## Behavior
+## Install
 
-- On session start (once per process), checks a cooldown file.
-  If the last check is older than the interval, runs `pi update --all` in the
-  background (pi itself + all packages, pinned git refs reconciled to their
-  configured ref, never moved).
-- Quiet when already up to date. Notifies only when something was updated
-  ("restart pi to apply") or the update failed.
-- Skips when `PI_OFFLINE=1`, `--offline`, or in print/JSON mode.
-- Cross-process lock prevents two pi sessions from updating simultaneously;
-  stale locks (>30 min) are ignored.
-
-## Files
-
-- State: `~/.pi/agent/auto-update-state.json` (`lastCheck`, transient `runningSince`)
-- Log: `~/.pi/agent/auto-update.log` (full output of every update run)
+```
+pi install https://github.com/kevinnio/pi-auto-update
+```
 
 ## Command
 
-- `/update` — force an update now, ignoring the cooldown.
+- `/update`: force an update now, ignoring the cooldown.
+- `/update off` / `/update on`: disable or enable auto-updates.
 
 ## Config
 
-- `PI_AUTO_UPDATE_HOURS` — cooldown in hours (default 24).
+- `"autoUpdateEnabled": false` in `~/.pi/agent/settings.json` disables it (same as `/update off`).
+- `PI_AUTO_UPDATE_HOURS`: cooldown in hours (default 24).
+- Respects `PI_OFFLINE=1` and `--offline`. Skips print/JSON mode so it never spawns npm under a run that exits immediately.
+
+## Files
+
+- State: `~/.pi/agent/auto-update-state.json` (24h cooldown timestamp, transient cross-process lock)
+- Log: `~/.pi/agent/auto-update.log` (full output of every run, capped at ~1MB)

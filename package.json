@@ -1,0 +1,22 @@
+{
+	"name": "pi-auto-update",
+	"version": "1.0.0",
+	"description": "Auto-update pi and its packages in the background, Claude Code style",
+	"license": "MIT",
+	"author": "kevinnio",
+	"keywords": [
+		"pi-package",
+		"pi-extension",
+		"auto-update"
+	],
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/kevinnio/pi-auto-update.git"
+	},
+	"scripts": {
+		"test": "node --test --experimental-strip-types index.test.ts"
+	},
+	"pi": {
+		"extensions": ["./index.ts"]
+	}
+}
