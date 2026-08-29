@@ -8,6 +8,7 @@ import { join } from "node:path";
 // Claude Code: quiet check on a cooldown, `pi update --all` when due,
 // notify only when something changed (or it failed). Restart pi to apply.
 
+const SETTINGS_FILE = join(homedir(), ".pi", "agent", "settings.json");
 const STATE_FILE = join(homedir(), ".pi", "agent", "auto-update-state.json");
 const LOG_FILE = join(homedir(), ".pi", "agent", "auto-update.log");
 const DEFAULT_INTERVAL_HOURS = 24;
@@ -26,6 +27,24 @@ async function readState(): Promise<State> {
 
 async function writeState(state: State): Promise<void> {
 	await writeFile(STATE_FILE, JSON.stringify(state, null, 2), "utf8");
+}
+
+// setting key: "autoUpdateEnabled": false in ~/.pi/agent/settings.json disables
+async function isEnabled(): Promise<boolean> {
+	try {
+		const settings = JSON.parse(await readFile(SETTINGS_FILE, "utf8")) as Record<string, unknown>;
+		return settings.autoUpdateEnabled !== false;
+	} catch {
+		return true;
+	}
+}
+
+async function setEnabled(enabled: boolean): Promise<void> {
+	const raw = await readFile(SETTINGS_FILE, "utf8");
+	const settings = JSON.parse(raw) as Record<string, unknown>;
+	if (enabled) delete settings.autoUpdateEnabled;
+	else settings.autoUpdateEnabled = false;
+	await writeFile(SETTINGS_FILE, JSON.stringify(settings, null, 2) + "\n", "utf8");
 }
 
 function isOffline(): boolean {
@@ -71,6 +90,7 @@ async function runUpdate(): Promise<{ ok: boolean; changed: boolean; tail: strin
 }
 
 async function maybeUpdate(force: boolean, ctx: ExtensionContext): Promise<void> {
+	if (!(await isEnabled())) return;
 	if (isOffline()) return;
 	if (ctx.mode !== "tui" && ctx.mode !== "rpc") return; // print/json: pi exits fast, don't spawn npm under it
 
@@ -100,6 +120,9 @@ async function maybeUpdate(force: boolean, ctx: ExtensionContext): Promise<void>
 	}
 }
 
+// # ponytail: JSON round-trip drops comments in settings.json; pi settings are
+// plain JSON today — if that changes, switch to a keyed patch instead.
+
 export default function (pi: ExtensionAPI) {
 	let started = false; // once per process; /new, /resume, /reload re-fire session_start
 
@@ -110,8 +133,18 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("update", {
-		description: "Update pi and its extensions now (ignores cooldown)",
-		handler: async (_args, ctx) => {
+		description: "Update pi now (/update), or toggle: /update off|on",
+		handler: async (args, ctx) => {
+			const arg = args?.trim().toLowerCase();
+			if (arg === "off" || arg === "on") {
+				await setEnabled(arg === "on");
+				ctx.ui.notify(`pi auto-update ${arg === "on" ? "enabled" : "disabled"} (saved to settings.json)`, "info");
+				return;
+			}
+			if (!(await isEnabled())) {
+				ctx.ui.notify("pi auto-update is disabled — run /update on to enable", "warning");
+				return;
+			}
 			ctx.ui.notify("pi auto-update: running pi update --all...", "info");
 			await maybeUpdate(true, ctx);
 		},
