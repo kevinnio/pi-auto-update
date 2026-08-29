@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { spawn } from "node:child_process";
-import { readFile, writeFile, appendFile, stat } from "node:fs/promises";
+import { readFile, writeFile, appendFile, stat, open, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -10,12 +10,13 @@ import { join } from "node:path";
 
 const SETTINGS_FILE = join(homedir(), ".pi", "agent", "settings.json");
 const STATE_FILE = join(homedir(), ".pi", "agent", "auto-update-state.json");
+const LOCK_FILE = join(homedir(), ".pi", "agent", "auto-update.lock");
 const LOG_FILE = join(homedir(), ".pi", "agent", "auto-update.log");
 const DEFAULT_INTERVAL_HOURS = 24;
 const UPDATE_TIMEOUT_MS = 10 * 60_000;
 const STALE_LOCK_MS = 30 * 60_000;
 
-type State = { lastCheck?: string; runningSince?: string };
+type State = { lastCheck?: string };
 
 async function readState(): Promise<State> {
 	try {
@@ -40,7 +41,7 @@ async function isEnabled(): Promise<boolean> {
 }
 
 async function setEnabled(enabled: boolean): Promise<void> {
-	const raw = await readFile(SETTINGS_FILE, "utf8");
+	const raw = await readFile(SETTINGS_FILE, "utf8").catch(() => "{}");
 	const settings = JSON.parse(raw) as Record<string, unknown>;
 	if (enabled) delete settings.autoUpdateEnabled;
 	else settings.autoUpdateEnabled = false;
@@ -66,6 +67,26 @@ export function isUpToDate(output: string): boolean {
 	return out.includes("up to date") || out.includes("up-to-date") || out.includes("no updates");
 }
 
+// atomic cross-process lock: exclusive-create lockfile, no check-then-write race.
+// Stale locks (crashed session) are stolen after STALE_LOCK_MS.
+async function acquireLock(): Promise<boolean> {
+	try {
+		const fh = await open(LOCK_FILE, "wx");
+		await fh.writeFile(String(process.pid), "utf8");
+		await fh.close();
+		return true;
+	} catch {
+		const st = await stat(LOCK_FILE).catch(() => null);
+		if (!st || Date.now() - st.mtimeMs <= STALE_LOCK_MS) return false;
+		await unlink(LOCK_FILE).catch(() => {});
+		return acquireLock(); // once: if another session wins the steal race, we lose cleanly
+	}
+}
+
+async function releaseLock(): Promise<void> {
+	await unlink(LOCK_FILE).catch(() => {});
+}
+
 // append with a size cap so months of daily runs can't grow the log unbounded
 async function appendLog(text: string): Promise<void> {
 	try {
@@ -84,14 +105,23 @@ async function runUpdate(): Promise<{ ok: boolean; changed: boolean; tail: strin
 	await appendLog(`\n===== ${new Date().toISOString()} pi update --all =====\n`);
 	const output = await new Promise<string>((resolve) => {
 		let out = "";
-		const child = spawn("pi", ["update", "--all"], { shell: true, windowsHide: true });
+		const child = spawn("pi", ["update", "--all"], {
+			shell: true,
+			windowsHide: true,
+			// own process group on POSIX so the timeout can kill shell + npm together
+			detached: process.platform !== "win32",
+		});
 		// kill the whole tree on timeout: shell:true means child.kill() only kills
 		// the shell and leaves npm running. That matters when pi runs for weeks.
 		const timer = setTimeout(() => {
 			if (process.platform === "win32") {
 				spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true });
 			} else {
-				child.kill("SIGTERM");
+				try {
+					process.kill(-child.pid!, "SIGTERM"); // negative pid = process group
+				} catch {
+					child.kill("SIGTERM");
+				}
 			}
 		}, UPDATE_TIMEOUT_MS);
 		child.stdout.on("data", (d: Buffer) => (out += d));
@@ -122,16 +152,13 @@ async function maybeUpdate(force: boolean, ctx: ExtensionContext): Promise<void>
 	if (ctx.mode !== "tui" && ctx.mode !== "rpc") return; // print/json: pi exits fast, don't spawn npm under it
 
 	const state = await readState();
-	const now = Date.now();
+	if (!force && state.lastCheck && Date.now() - Date.parse(state.lastCheck) < intervalMs()) return;
 
-	// Cross-process lock (multiple pi sessions): skip if another update is running
-	if (state.runningSince) {
-		const age = now - Date.parse(state.runningSince);
-		if (age < STALE_LOCK_MS) return;
+	if (!(await acquireLock())) {
+		// forced runs already told the user "running..."; don't leave them hanging
+		if (force) ctx.ui.notify("pi auto-update: another update is already running", "warning");
+		return;
 	}
-	if (!force && state.lastCheck && now - Date.parse(state.lastCheck) < intervalMs()) return;
-
-	await writeState({ ...state, runningSince: new Date().toISOString() });
 	try {
 		const result = await runUpdate();
 		await writeState({ lastCheck: new Date().toISOString() });
@@ -142,8 +169,7 @@ async function maybeUpdate(force: boolean, ctx: ExtensionContext): Promise<void>
 		}
 		// up to date: stay quiet, like claude code
 	} finally {
-		const current = await readState();
-		await writeState({ lastCheck: current.lastCheck });
+		releaseLock();
 	}
 }
 
