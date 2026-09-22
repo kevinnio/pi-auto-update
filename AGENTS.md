@@ -18,7 +18,8 @@ Split by concern, one job per file; nothing here is a framework.
 | `src/settings.ts` | `autoUpdateEnabled` interop with pi's `settings.json`. |
 | `src/log.ts` | Capped, best-effort run log. |
 | `src/config.ts` | Paths and constants. Inert: no logic, no env reads. |
-| `tests/changes.test.ts` | Tests for the pure change detection in `src/changes.ts`. |
+| `tests/changes.test.ts` | Tests for the pure logic in `src/changes.ts`. |
+| `tests/smoke.test.ts` | Loads the entry point, proving the module graph resolves under node. |
 
 ## Invariants (do not break these)
 
@@ -47,20 +48,14 @@ npm test
 
 Detection is the part most likely to regress silently: a missed update means a user runs stale code, a spurious one means the daily "restart pi" toast that this was written to avoid. When adding a case, use real output copied from `~/.pi/agent/auto-update.log`, and check it against the snapshot semantics above rather than against the presence of any single string.
 
-After changes also smoke-load the extension:
-
-```
-node --experimental-strip-types -e "import('./src/index.ts').then(m => console.log(typeof m.default))"
-```
-
-(should print `function`).
+`tests/smoke.test.ts` asserts the entry point exports a factory function, so `npm test` is the whole check (CI runs it on Linux and Windows).
 
 ## Conventions
 
 - TypeScript, loaded by pi via jiti. No build step, no compilation.
 - One concern per file (see Layout). Do not add config systems, tools, or abstractions without removing something first.
 - Keep the pure/impure line where it is: decisions in `changes.ts`, I/O in `snapshot.ts`. That is what keeps the decision testable without touching a real pi install.
-- Relative imports carry the `.ts` extension: node's type stripping resolves nothing implicitly, and the smoke-load below runs these files through node directly.
+- Relative imports carry the `.ts` extension: node's type stripping resolves nothing implicitly, and `tests/smoke.test.ts` loads the entry point through node directly.
 - Only `src/index.ts` is listed in `package.json` `pi.extensions`. jiti loads it and resolves everything else as a plain module, so never call `pi.*` outside `index.ts` — a helper would otherwise become an extension in its own right.
 - Settings interop: reads/writes `autoUpdateEnabled` in `~/.pi/agent/settings.json` via JSON round-trip (comments in that file would be lost; pi settings are plain JSON today).
 - `pi` field in `package.json` (`"extensions": ["./src/index.ts"]`) is the entry point for git/npm installs. Keep it in sync if files move.

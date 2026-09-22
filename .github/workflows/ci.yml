@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows adds no coverage of the platform-specific paths - those are untested
+        # by policy. It is here so the quoted test glob and the relative .ts imports are
+        # exercised under cmd.exe, which is how this extension is usually run.
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # no install step: the extension and its tests have no dependencies
+      - run: npm test
