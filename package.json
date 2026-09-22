@@ -1,6 +1,6 @@
 {
 	"name": "pi-auto-update",
-	"version": "1.0.0",
+	"version": "1.1.0",
 	"description": "Auto-update pi and its packages in the background, Claude Code style",
 	"license": "MIT",
 	"author": "kevinnio",
@@ -17,6 +17,8 @@
 		"test": "node --test --experimental-strip-types \"tests/*.test.ts\""
 	},
 	"pi": {
-		"extensions": ["./src/index.ts"]
+		"extensions": [
+			"./src/index.ts"
+		]
 	}
 }
