@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { changedPackages } from "./changes.ts";
+import { changedPackages, isWindowsLockFailure } from "./changes.ts";
 import { UPDATE_TIMEOUT_MS } from "./config.ts";
 import { appendLog } from "./log.ts";
 import { snapshot } from "./snapshot.ts";
@@ -7,7 +7,7 @@ import { snapshot } from "./snapshot.ts";
 // Running `pi update --all` with its output captured and logged. Output is never
 // inherited: npm noise would wreck the TUI.
 
-type Result = { ok: boolean; names: string[]; tail: string };
+type Result = { status: "ok" | "failed" | "deferred"; names: string[]; tail: string };
 
 export async function runUpdate(cwd: string): Promise<Result> {
 	await appendLog(`\n===== ${new Date().toISOString()} pi update --all =====\n`);
@@ -50,9 +50,12 @@ export async function runUpdate(cwd: string): Promise<Result> {
 	await appendLog(output);
 
 	const lines = output.split("\n").map((l) => l.trim()).filter(Boolean);
-	return {
-		ok: /exit code: 0/.test(output),
-		names: changedPackages(before, await snapshot(cwd), output),
-		tail: lines.slice(-3).join(" | "), // for the failure notification
-	};
+	const names = changedPackages(before, await snapshot(cwd), output);
+	// A lock failure that replaced nothing was never attempted. One that did replace
+	// something is a failure: npm installs sequentially, so the user still needs to hear
+	// that the run stopped partway.
+	const ok = /exit code: 0/.test(output);
+	let status: Result["status"] = "ok";
+	if (!ok) status = names.length === 0 && isWindowsLockFailure(output) ? "deferred" : "failed";
+	return { status, names, tail: lines.slice(-3).join(" | ") };
 }

@@ -40,3 +40,11 @@ export function changedPackages(before: FsState, after: FsState, output: string)
 	if (names.length === 0 && hasChanges(output)) names.push("pi/packages");
 	return names;
 }
+
+// npm cannot replace a package while another pi runtime (pi-intercom's broker, a second
+// session) holds its files open. Windows reports that as one of these; on other
+// platforms they mean nothing, so the check is platform-gated.
+export function isWindowsLockFailure(output: string, platform: NodeJS.Platform = process.platform): boolean {
+	if (platform !== "win32") return false;
+	return /\bEBUSY\b/i.test(output) || /\b4294963214\b/.test(output) || /-4082\b/.test(output);
+}

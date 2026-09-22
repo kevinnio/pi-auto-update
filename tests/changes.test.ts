@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
-import { changedNames, changedPackages, hasChanges, selfUpdated } from "../src/changes.ts";
+import { changedNames, changedPackages, hasChanges, isWindowsLockFailure, selfUpdated } from "../src/changes.ts";
 
 // verbatim from a no-op run: pi prints "Updated packages" unconditionally, so only the
 // diff of what it left on disk can tell this apart from a real update
@@ -126,5 +126,24 @@ describe("changedPackages", () => {
 		const after = structuredClone(base);
 		after.git["/git/github.com/kevinnio/pi-lmstudio"] = "9f2c1de";
 		assert.deepEqual(changedPackages(base, after, NPM_UPDATED_OUTPUT), ["pi-lmstudio"]);
+	});
+});
+
+describe("isWindowsLockFailure", () => {
+	it("recognises the Windows file-lock signatures", () => {
+		assert.equal(isWindowsLockFailure("npm error code EBUSY", "win32"), true);
+		assert.equal(isWindowsLockFailure("npm error errno -4082", "win32"), true);
+		assert.equal(isWindowsLockFailure("npm error errno 4294963214", "win32"), true);
+		assert.equal(isWindowsLockFailure("npm error errno 42949632145", "win32"), false);
+	});
+
+	it("does not treat those strings as a lock failure elsewhere", () => {
+		assert.equal(isWindowsLockFailure("npm error code EBUSY", "linux"), false);
+		assert.equal(isWindowsLockFailure("npm error code EBUSY", "darwin"), false);
+	});
+
+	it("leaves real failures to the failure notification", () => {
+		assert.equal(isWindowsLockFailure("npm error 404 not found", "win32"), false);
+		assert.equal(isWindowsLockFailure("exit code: 1", "win32"), false);
 	});
 });

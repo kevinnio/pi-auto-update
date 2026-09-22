@@ -2,10 +2,6 @@
 
 Pi extension that auto-updates pi and its packages in the background, Claude Code style. On session start it checks a cooldown file and, when due, runs `pi update --all` out of sight (pi itself plus all packages). Quiet when already up to date; notifies only when something changed ("restart pi to apply", naming the packages that moved) or the update failed.
 
-## How it knows something changed
-
-Not from `pi update`'s output: that prints `Updating <url>...` for every git package whether or not anything moved, and `Updated packages` even when it did nothing at all. Instead the extension snapshots what pi mutates - every managed git clone's HEAD commit and the resolved versions in the npm lockfile - before and after the run. A package counts as updated only if its clone moved or its version changed.
-
 ## Install
 
 ```
