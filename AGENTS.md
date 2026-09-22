@@ -8,13 +8,15 @@ Single-file pi extension (`index.ts`) that auto-updates pi and its packages in t
 - **Quiet on success.** Users get a notify only when something was updated ("restart pi to apply") or the update failed. Silence means "checked, nothing to do".
 - **Kill the process tree on timeout** (`taskkill /T /F` on win32, `SIGTERM` elsewhere). `shell: true` means `child.kill()` alone orphans npm.
 - **Log is capped** (~1MB → truncated to last 256KB) and every append is best-effort (`catch(() => {})`). Log failures must never fail the update.
-- **Cross-process lock** in the state file (`runningSince`) prevents two pi sessions from updating at once; locks older than 30 minutes are considered stale and stolen.
+- **Cross-process lock:** an atomically created `~/.pi/agent/auto-update.lock` (`open` with `wx`) prevents two pi sessions from updating at once; locks older than 30 minutes are considered stale and stolen.
 - **Mode guard:** only run in `tui`/`rpc`. In print/JSON mode pi exits immediately, and spawning npm under it risks a half-finished update.
 - **Offline guard:** skip when `PI_OFFLINE=1` or `--offline` is in argv.
 
 ## How updates work
 
-`pi update --all` (pi itself + all packages; pinned git refs are reconciled to their configured ref, never moved). State in `~/.pi/agent/auto-update-state.json` (`lastCheck` for the 24h cooldown, transient `runningSince` lock), full output in `~/.pi/agent/auto-update.log`. Runs are user-visible only via notifications; npm/package output is never inherited into the TUI.
+`pi update --all` (pi itself + all packages; pinned git refs are reconciled to their configured ref, never moved). State in `~/.pi/agent/auto-update-state.json` (`lastCheck` for the 24h cooldown), full output in `~/.pi/agent/auto-update.log`. Runs are user-visible only via notifications; npm/package output is never inherited into the TUI.
+
+Whether anything actually changed is decided by diffing what pi mutates, not by reading its output: a snapshot of every pi-managed git clone's `git rev-parse HEAD` plus the resolved versions in the agent npm `package-lock.json`, taken before and after the run, in the agent dir and in `<cwd>/.pi`. `pi update` cannot answer this question itself — it prints `Updating <url>...` for every git source whether or not anything moved, and `Updated packages` unconditionally, while a moved clone with no `package.json` (or with unchanged deps) prints nothing distinguishable. `hasChanges()`/`selfUpdated()` remain as fallbacks for what a snapshot cannot see (git missing, lockfile writing disabled) and only match strings pi emits on a real change.
 
 ## Testing
 
@@ -22,7 +24,9 @@ Single-file pi extension (`index.ts`) that auto-updates pi and its packages in t
 npm test
 ```
 
-`node:test` + type stripping, no test deps. Tests cover `isUpToDate` (the only non-trivial pure logic). The fs/spawn wrappers are intentionally untested. Real `pi update` output phrasings may change between pi versions; if a user reports a missed or spurious notification, that function is the first suspect. Add the observed output as a new test case.
+`node:test` + type stripping, no test deps. Tests cover the pure change-detection logic — `changedNames` (snapshot diff), `selfUpdated`, `hasChanges`. The fs/spawn wrappers (`snapshot`, `gitHeads`, `runUpdate`) are intentionally untested.
+
+Detection is the part most likely to regress silently: a missed update means a user runs stale code, a spurious one means the daily "restart pi" toast that this was written to avoid. When adding a case, use real output copied from `~/.pi/agent/auto-update.log`, and check it against the snapshot semantics above rather than against the presence of any single string.
 
 After changes also smoke-load the extension:
 
