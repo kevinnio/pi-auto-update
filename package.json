@@ -17,8 +17,6 @@
 		"test": "node --test --experimental-strip-types \"tests/*.test.ts\""
 	},
 	"pi": {
-		"extensions": [
-			"./src/index.ts"
-		]
+		"extensions": ["./src/index.ts"]
 	}
 }
