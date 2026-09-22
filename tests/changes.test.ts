@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
-import { changedNames, hasChanges, selfUpdated } from "./index.ts";
+import { changedNames, changedPackages, hasChanges, selfUpdated } from "../src/changes.ts";
 
 // verbatim from a no-op run: pi prints "Updated packages" unconditionally, so only the
 // diff of what it left on disk can tell this apart from a real update
@@ -23,9 +23,9 @@ pi is already up to date (v0.84.4)
 
 exit code: 0`;
 
-describe("changedNames", () => {
-	const base = { git: { "/git/github.com/kevinnio/pi-lmstudio": "d0219ab" }, npm: { "node_modules/pi-loop-police": "1.14.1" } };
+const base = { git: { "/git/github.com/kevinnio/pi-lmstudio": "d0219ab" }, npm: { "node_modules/pi-loop-police": "1.14.1" } };
 
+describe("changedNames", () => {
 	it("is empty when nothing moved", () => {
 		assert.deepEqual(changedNames(base, structuredClone(base)), []);
 	});
@@ -70,7 +70,7 @@ describe("changedNames", () => {
 		// "Updating <url>..." is printed for every git source regardless
 		const after = structuredClone(base);
 		after.git["/git/github.com/kevinnio/pi-lmstudio"] = "9f2c1de";
-		assert.equal(changedNames(base, after).length > 0, true);
+		assert.deepEqual(changedNames(base, after), ["pi-lmstudio"]);
 	});
 });
 
@@ -99,5 +99,32 @@ describe("hasChanges", () => {
 
 	it("reports nothing for a failed run (the exit code drives that notification)", () => {
 		assert.equal(hasChanges("npm error code EBUSY\nexit code: 1"), false);
+	});
+});
+
+describe("changedPackages", () => {
+	it("names the packages the snapshot saw move", () => {
+		const after = structuredClone(base);
+		after.npm["node_modules/pi-loop-police"] = "1.15.0";
+		assert.deepEqual(changedPackages(base, after, NOOP_OUTPUT), ["pi-loop-police"]);
+	});
+
+	it("reports a no-op run as nothing at all", () => {
+		assert.deepEqual(changedPackages(base, structuredClone(base), NOOP_OUTPUT), []);
+	});
+
+	it("falls back to pi when only its self-update line gives it away", () => {
+		const output = "Updated packages\nUpdated pi from 0.85.1 to 0.87.0\nexit code: 0";
+		assert.deepEqual(changedPackages(base, structuredClone(base), output), ["pi"]);
+	});
+
+	it("falls back to a generic label when only npm's output gives it away", () => {
+		assert.deepEqual(changedPackages(base, structuredClone(base), NPM_UPDATED_OUTPUT), ["pi/packages"]);
+	});
+
+	it("prefers the names it can prove over the output fallback", () => {
+		const after = structuredClone(base);
+		after.git["/git/github.com/kevinnio/pi-lmstudio"] = "9f2c1de";
+		assert.deepEqual(changedPackages(base, after, NPM_UPDATED_OUTPUT), ["pi-lmstudio"]);
 	});
 });
