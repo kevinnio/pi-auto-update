@@ -8,26 +8,42 @@ import { snapshot } from "./snapshot.ts";
 // inherited: npm noise would wreck the TUI.
 
 type Result = { status: "ok" | "failed" | "deferred"; names: string[]; tail: string };
+type Runner = (command: string, args: string[]) => Promise<string>;
+export type Step = { command: string; args: string[]; output: string };
+
+// One `pi update --all`, plus the single stale-pnpm-metadata retry: stale metadata
+// fails every run until the one package listing is dropped, and pi only prints a hint
+// to do it by hand. Clear just that package and run once more, so a real failure still
+// ends in the failure notification. The runner is a parameter so the sequencing is
+// testable without spawning anything.
+export async function updateSteps(run: Runner = capture): Promise<Step[]> {
+	const steps: Step[] = [];
+	const take = async (command: string, args: string[]): Promise<string> => {
+		const output = await run(command, args);
+		steps.push({ command, args, output });
+		return output;
+	};
+
+	const first = await take("pi", ["update", "--all"]);
+	const clean = succeeded(first) ? null : cacheClean(first);
+	if (!clean) return steps;
+
+	await take(clean.command, clean.args);
+	await take("pi", ["update", "--all"]);
+	return steps;
+}
 
 export async function runUpdate(cwd: string): Promise<Result> {
 	await appendLog(`\n===== ${new Date().toISOString()} pi update --all =====\n`);
 
 	const before = await snapshot(cwd);
-	let output = await capture("pi", ["update", "--all"]);
-	await appendLog(output);
-
-	// Stale pnpm metadata fails every run until the one package listing is dropped, and
-	// pi only prints a hint to do it by hand. Clear just that package and run once more;
-	// one retry, so a real failure still ends in the failure notification.
-	const clean = succeeded(output) ? null : cacheClean(output);
-	if (clean) {
-		await appendLog(`\n===== cache clean: ${clean.command} ${clean.args.join(" ")} =====\n`);
-		await appendLog(await capture(clean.command, clean.args));
-		await appendLog("\n===== retry: pi update --all =====\n");
-		output = await capture("pi", ["update", "--all"]);
-		await appendLog(output);
+	const steps = await updateSteps();
+	await appendLog(steps[0].output);
+	for (const step of steps.slice(1)) {
+		await appendLog(`\n===== ${step.command} ${step.args.join(" ")} =====\n${step.output}`);
 	}
 
+	const output = steps[steps.length - 1].output;
 	const lines = output.split("\n").map((l) => l.trim()).filter(Boolean);
 	const names = changedPackages(before, await snapshot(cwd), output);
 	// A lock failure that replaced nothing was never attempted. One that did replace
