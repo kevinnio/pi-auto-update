@@ -41,6 +41,21 @@ export function changedPackages(before: FsState, after: FsState, output: string)
 	return names;
 }
 
+export type CacheClean = { command: string; args: string[] };
+
+// A stale pnpm metadata cache fails resolution while the registry has the version, and
+// only pnpm can be cleaned surgically: `pnpm cache delete <pkg>` drops one package's
+// listing (a few KB) and leaves the store alone. `pnpm store prune`, which pi's own
+// hint suggests, does not touch metadata at all. Every other manager is left alone:
+// their cleans are all-or-nothing (`npm cache clean --force` is the whole cacache,
+// gigabytes on a normal machine) and their resolution failures usually mean the
+// version really is missing, so the wipe would cost the user and still fail.
+export function cacheClean(output: string): CacheClean | null {
+	if (!/Updating pi with pnpm /i.test(output)) return null;
+	const pkg = /No matching version found for (\S+?)@[^\s@]+/.exec(output)?.[1];
+	return pkg ? { command: "pnpm", args: ["cache", "delete", pkg] } : null;
+}
+
 // npm cannot replace a package while another pi runtime (pi-intercom's broker, a second
 // session) holds its files open. Windows reports that as one of these; on other
 // platforms they mean nothing, so the check is platform-gated.

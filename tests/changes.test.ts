@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
-import { changedNames, changedPackages, hasChanges, isWindowsLockFailure, selfUpdated } from "../src/changes.ts";
+import { cacheClean, changedNames, changedPackages, hasChanges, isWindowsLockFailure, selfUpdated } from "../src/changes.ts";
 
 // verbatim from a no-op run: pi prints "Updated packages" unconditionally, so only the
 // diff of what it left on disk can tell this apart from a real update
@@ -126,6 +126,50 @@ describe("changedPackages", () => {
 		const after = structuredClone(base);
 		after.git["/git/github.com/kevinnio/pi-lmstudio"] = "9f2c1de";
 		assert.deepEqual(changedPackages(base, after, NPM_UPDATED_OUTPUT), ["pi-lmstudio"]);
+	});
+});
+
+describe("cacheClean", () => {
+	// verbatim from a real run: pnpm's cached metadata for the package predated the
+	// version its dependency asked for, so resolution failed although npm had it
+	const PNPM_STALE = `Updating pi with pnpm install -g --ignore-scripts --config.minimumReleaseAge=0 @earendil-works/pi-coding-agent@1.4.0...
+
+[ERR_PNPM_NO_MATCHING_VERSION] No matching version found for @aws-sdk/token-providers@3.1155.0 while fetching it from https://registry.npmjs.org/
+
+This error happened while installing the dependencies of @earendil-works/pi-coding-agent@1.4.0
+
+The latest release of @aws-sdk/token-providers is "3.1152.0".
+
+Error: pnpm install -g --ignore-scripts --config.minimumReleaseAge=0 @earendil-works/pi-coding-agent@1.4.0 exited with code 1
+
+If pnpm reports missing package versions, its cached registry metadata may be stale.
+Run \`pnpm store prune\` and retry \`pi update --self\`.
+
+exit code: 1`;
+
+	it("drops only the stale package's metadata, not the store or other packages", () => {
+		assert.deepEqual(cacheClean(PNPM_STALE), {
+			command: "pnpm",
+			args: ["cache", "delete", "@aws-sdk/token-providers"],
+		});
+	});
+
+	it("leaves other package managers' caches alone", () => {
+		const npm = "Updating pi with npm install -g --ignore-scripts pi@1.4.0...\nnpm error code ETARGET\nnpm error notarget No matching version found for pi@1.4.0.\nexit code: 1";
+		assert.equal(cacheClean(npm), null);
+
+		const yarn = "Updating pi with yarn global add --ignore-scripts pi@1.4.0...\nerror Couldn't find any versions for \"pi\" that matches \"1.4.0\"\nexit code: 1";
+		assert.equal(cacheClean(yarn), null);
+	});
+
+	it("needs the package name to clean anything", () => {
+		assert.equal(cacheClean("Updating pi with pnpm install -g pi@1.4.0...\nERR_PNPM_NO_MATCHING_VERSION\nexit code: 1"), null);
+	});
+
+	it("leaves failures a cache clean cannot fix alone", () => {
+		assert.equal(cacheClean("Updating pi with pnpm install -g pi@1.4.0...\npnpm ERR! code EBUSY\nexit code: 1"), null);
+		assert.equal(cacheClean("npm error code EAI_AGAIN\nexit code: 1"), null);
+		assert.equal(cacheClean("exit code: 0"), null);
 	});
 });
 
