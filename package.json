@@ -1,6 +1,6 @@
 {
 	"name": "pi-auto-update",
-	"version": "1.1.0",
+	"version": "1.2.0",
 	"description": "Auto-update pi and its packages in the background, Claude Code style",
 	"license": "MIT",
 	"author": "kevinnio",
