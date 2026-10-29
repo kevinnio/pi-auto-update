@@ -46,6 +46,7 @@ npm test
 ## Conventions
 
 - TypeScript loaded via jiti: no build step.
+- A blank line above every `return`, and below a guard clause. A run of consecutive guards stays together, with one blank line after the last one.
 - Do not add config systems, tools, or abstractions without removing something first.
 - Relative imports carry the `.ts` extension.
 - Only `src/index.ts` may call `pi.*`; never a helper.

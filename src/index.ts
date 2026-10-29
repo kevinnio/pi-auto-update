@@ -14,6 +14,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_event, ctx) => {
 		if (started) return;
+
 		started = true;
 		void maybeUpdate(false, ctx).catch((err: unknown) => {
 			// fire-and-forget: a failed check must never take the session down
@@ -28,12 +29,15 @@ export default function (pi: ExtensionAPI) {
 			if (arg === "off" || arg === "on") {
 				await setEnabled(arg === "on");
 				ctx.ui.notify(`pi auto-update ${arg === "on" ? "enabled" : "disabled"} (saved to settings.json)`, "info");
+
 				return;
 			}
 			if (!(await isEnabled())) {
 				ctx.ui.notify("pi auto-update is disabled. Run /update on to enable.", "warning");
+
 				return;
 			}
+
 			ctx.ui.notify("pi auto-update: running pi update --all...", "info");
 			await maybeUpdate(true, ctx);
 		},

@@ -9,11 +9,14 @@ export async function acquireLock(): Promise<boolean> {
 		const handle = await open(LOCK_FILE, "wx");
 		await handle.writeFile(String(process.pid), "utf8");
 		await handle.close();
+
 		return true;
 	} catch {
 		const info = await stat(LOCK_FILE).catch(() => null);
 		if (!info || Date.now() - info.mtimeMs <= STALE_LOCK_MS) return false;
+
 		await unlink(LOCK_FILE).catch(() => {});
+
 		return acquireLock(); // once: if another session wins the steal race, we lose cleanly
 	}
 }

@@ -14,6 +14,7 @@ export function changedNames(before: FsState, after: FsState): string[] {
 	};
 	diff(before.git, after.git, (key) => basename(key));
 	diff(before.npm, after.npm, (key) => key.replace(/^.*node_modules\//, ""));
+
 	return [...names];
 }
 
@@ -38,6 +39,7 @@ export function changedPackages(before: FsState, after: FsState, output: string)
 	if (names.length === 0 && selfUpdated(output)) names.push("pi");
 	// only fires when a package moved that the snapshots could not see
 	if (names.length === 0 && hasChanges(output)) names.push("pi/packages");
+
 	return names;
 }
 
@@ -52,7 +54,9 @@ export type CacheClean = { command: string; args: string[] };
 // version really is missing, so the wipe would cost the user and still fail.
 export function cacheClean(output: string): CacheClean | null {
 	if (!/Updating pi with pnpm /i.test(output)) return null;
+
 	const pkg = /No matching version found for (\S+?)@[^\s@]+/.exec(output)?.[1];
+
 	return pkg ? { command: "pnpm", args: ["cache", "delete", pkg] } : null;
 }
 
@@ -61,5 +65,6 @@ export function cacheClean(output: string): CacheClean | null {
 // platforms they mean nothing, so the check is platform-gated.
 export function isWindowsLockFailure(output: string, platform: NodeJS.Platform = process.platform): boolean {
 	if (platform !== "win32") return false;
+
 	return /\bEBUSY\b/i.test(output) || /\b4294963214\b/.test(output) || /-4082\b/.test(output);
 }

@@ -19,8 +19,10 @@ function fake(outputs: string[]) {
 	const calls: string[] = [];
 	const run = async (command: string, args: string[]) => {
 		calls.push([command, ...args].join(" "));
+
 		return outputs.shift() ?? "";
 	};
+
 	return { calls, run };
 }
 

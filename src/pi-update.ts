@@ -21,6 +21,7 @@ export async function updateSteps(run: Runner = capture): Promise<Step[]> {
 	const take = async (command: string, args: string[]): Promise<string> => {
 		const output = await run(command, args);
 		steps.push({ command, args, output });
+
 		return output;
 	};
 
@@ -30,6 +31,7 @@ export async function updateSteps(run: Runner = capture): Promise<Step[]> {
 
 	await take(clean.command, clean.args);
 	await take("pi", ["update", "--all"]);
+
 	return steps;
 }
 
@@ -51,6 +53,7 @@ export async function runUpdate(cwd: string): Promise<Result> {
 	// that the run stopped partway.
 	let status: Result["status"] = "ok";
 	if (!succeeded(output)) status = names.length === 0 && isWindowsLockFailure(output) ? "deferred" : "failed";
+
 	return { status, names, tail: lines.slice(-3).join(" | ") };
 }
 

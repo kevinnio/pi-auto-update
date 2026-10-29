@@ -6,6 +6,7 @@ import { SETTINGS_FILE } from "./config.ts";
 export async function isEnabled(): Promise<boolean> {
 	try {
 		const settings = JSON.parse(await readFile(SETTINGS_FILE, "utf8")) as Record<string, unknown>;
+
 		return settings.autoUpdateEnabled !== false;
 	} catch {
 		return true;

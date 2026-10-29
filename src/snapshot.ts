@@ -14,6 +14,7 @@ const execFileAsync = promisify(execFile);
 async function revParse(dir: string): Promise<string> {
 	const { stdout } = await execFileAsync("git", ["-C", dir, "rev-parse", "HEAD"], { windowsHide: true })
 		.catch(() => ({ stdout: "" }));
+
 	return stdout.trim();
 }
 
@@ -26,11 +27,13 @@ async function gitHeads(root: string): Promise<Record<string, string>> {
 	const walk = async (dir: string): Promise<void> => {
 		for (const entry of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
 			if (!entry.isDirectory() || entry.name === "node_modules") continue;
+
 			if (entry.name === ".git") heads[dir] = await revParse(dir);
 			else await walk(join(dir, entry.name));
 		}
 	};
 	await walk(root);
+
 	return heads;
 }
 
@@ -41,6 +44,7 @@ async function npmVersions(lockPath: string): Promise<Record<string, string>> {
 		const lock = JSON.parse(await readFile(lockPath, "utf8")) as {
 			packages?: Record<string, { version?: string }>;
 		};
+
 		return Object.fromEntries(
 			Object.entries(lock.packages ?? {})
 				.filter(([path]) => path)
@@ -60,5 +64,6 @@ export async function snapshot(cwd: string): Promise<FsState> {
 		Object.assign(git, await gitHeads(join(root, "git")));
 		Object.assign(npm, await npmVersions(join(root, "npm", "package-lock.json")));
 	}
+
 	return { git, npm };
 }
