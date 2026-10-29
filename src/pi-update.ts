@@ -7,7 +7,7 @@ import { snapshot } from "./snapshot.ts";
 // Running `pi update --all` with its output captured and logged. Output is never
 // inherited: npm noise would wreck the TUI.
 
-type Result = { status: "ok" | "failed" | "deferred"; names: string[]; tail: string };
+export type Result = { status: "ok" | "failed" | "deferred"; names: string[]; tail: string };
 type Runner = (command: string, args: string[]) => Promise<string>;
 export type Step = { command: string; args: string[]; output: string };
 

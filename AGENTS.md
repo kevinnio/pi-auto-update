@@ -41,7 +41,7 @@ On session start, run `pi update --all` out of sight. pi tells the user about pe
 npm test
 ```
 
-`node:test` + type stripping, no test deps, Node 22+. Covers the pure logic in `src/changes.ts` and the retry sequencing in `src/pi-update.ts` (through an injected runner); the actual spawn/fs wrappers are intentionally untested. CI runs it on Linux and Windows. Detection is the part most likely to regress silently, so add cases from real log output.
+`node:test` + type stripping, no test deps, Node 22+. Covers the pure logic in `src/changes.ts`, the notice policy in `src/auto-update.ts`, and the retry sequencing in `src/pi-update.ts` (through an injected runner); the actual spawn/fs wrappers are intentionally untested. CI runs it on Linux and Windows. Detection is the part most likely to regress silently, so add cases from real log output.
 
 ## Conventions
 
