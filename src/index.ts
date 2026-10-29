@@ -4,8 +4,8 @@ import { appendLog } from "./log.ts";
 import { isEnabled, setEnabled } from "./settings.ts";
 
 // Updates pi and its packages in the background on session start, Claude Code style:
-// a quiet check on a cooldown, `pi update --all` when due, and a notification only
-// when something changed or the update failed.
+// `pi update --all` out of sight at every start, and a notification only when
+// something changed or the update failed.
 //
 // Only this file is loaded as an extension (package.json `pi.extensions`); everything
 // it imports is a plain module, so no other file may call into the pi API.

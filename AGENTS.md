@@ -14,7 +14,6 @@ One concern per file; nothing here is a framework.
 | `src/changes.ts` | Pure decisions: what changed, how to read pi's output. |
 | `src/snapshot.ts` | I/O only: reading the state pi mutates. |
 | `src/lock.ts` | Cross-process lock so two sessions never update at once. |
-| `src/state.ts` | Cooldown state. |
 | `src/settings.ts` | `autoUpdateEnabled` interop with pi's `settings.json`. |
 | `src/log.ts` | Capped, best-effort run log. |
 | `src/config.ts` | Paths and constants. Inert: no logic, no env reads. |
@@ -22,7 +21,7 @@ One concern per file; nothing here is a framework.
 
 ## How it works
 
-On session start, when the cooldown allows, run `pi update --all` out of sight. Output is logged, never inherited. Whether anything changed is decided by diffing what pi left on disk, since its output cannot answer that.
+On session start, run `pi update --all` out of sight. pi tells the user about pending package updates at every startup, so a timer here would leave them hearing about updates the plugin never made; the lock, not a cooldown, is what bounds the work. Output is logged, never inherited. Whether anything changed is decided by diffing what pi left on disk, since its output cannot answer that.
 
 ## Invariants (do not break these)
 
@@ -31,7 +30,7 @@ On session start, when the cooldown allows, run `pi update --all` out of sight. 
 - **Kill the process tree on timeout**, not just the shell.
 - **Logs never fail the update.** Appends are best-effort and the log is capped.
 - **One updater at a time** across pi sessions.
-- **A deferral is not a failure.** A file-lock collision that replaced nothing is retried next session and must not start the cooldown; a forced `/update` is always answered.
+- **A deferral is not a failure.** A file-lock collision that replaced nothing is retried by the next session and stays in the log; a forced `/update` is always answered.
 - **Stale metadata gets one retry, never a loop, and only pnpm's.** Clear the single package the error names, rerun once, and let the retry's result decide the status. Other managers' caches are left alone.
 - **Only update in `tui`/`rpc` modes**, and never while offline.
 - **Keep the pure/impure line.** Decisions live in `changes.ts`, their I/O in `snapshot.ts`.
