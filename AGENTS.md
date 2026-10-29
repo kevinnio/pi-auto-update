@@ -49,8 +49,9 @@ npm test
 - A blank line above every `return`, and below a guard clause. A run of consecutive guards stays together, with one blank line after the last one.
 - Do not add config systems, tools, or abstractions without removing something first.
 - Relative imports carry the `.ts` extension.
+- Keep `pi.extensions` in `package.json` in sync with the entry point if files move.
 - Only `src/index.ts` may call `pi.*`; never a helper.
-- `README.md` is for users (install, commands, config, files it writes, behaviour); mechanism and rationale live here or in code comments. Keep `pi.extensions` in `package.json` in sync if files move.
+- `README.md` is for users only: install, commands, configuration, behaviour they can observe, and the files it writes. No low-level detail there, meaning no command names it shells out to, no locks, timeouts, caps, log format, or how pi's output is read. Anything a reader does not need in order to install, run, configure, or explain what they just saw belongs in this file or in a code comment.
 
 ## Release
 
